@@ -1,0 +1,42 @@
+name: Release
+
+# 打 tag 时自动发 Release，把固件挂上去。
+# 也支持手动触发（Actions -> Release -> Run workflow，填 tag）。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布成 Release 的 tag，例如 v1.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag
+        id: v
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.v.outputs.tag }}
+          name: ${{ steps.v.outputs.tag }} — RP2040 三合一控制台
+          body_path: RELEASE_NOTES.md
+          files: firmware/*.uf2
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
