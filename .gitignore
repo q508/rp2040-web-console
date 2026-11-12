@@ -1,0 +1,23 @@
+# 临时/调试产物
+*.tmp
+_chk.js
+_*.csv
+_*.png
+_v*.uf2
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# 固件编译产物（源码目录内不应出现）
+firmware-src/build/
+firmware-src/generated/
+*.elf
+*.bin
+*.hex
+*.o
+*.map
+
+# 注意：firmware/*.uf2 是要发布的，不能忽略

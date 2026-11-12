@@ -117,6 +117,12 @@
   .fw-src{font-size:12px;color:var(--muted)}
   .fw-src a{color:var(--accent);text-decoration:none;font-weight:500}
   .fw-src a:hover{text-decoration:underline}
+  #tab-pins .card{overflow-x:auto}
+  @media (max-width:760px){
+    .pin-table{font-size:12px}
+    .pin-table th,.pin-table td{padding:6px 7px}
+    header{padding:14px 16px}
+  }
   @media (max-width:800px){
     .pwm-grid{grid-template-columns:1fr}
     .stats{grid-template-columns:repeat(2,1fr)}
