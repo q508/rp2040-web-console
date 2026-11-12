@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RP2040 三合一 Web 控制台</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Cpath d='M4 20h6l3-9 4 18 3-9h8' fill='none' stroke='white' stroke-width='2.2' stroke-linejoin='round' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div>
+    <h1>RP2040 三合一 Web 控制台</h1>
+    <div class="sub">PWM 信号源 + 1/2 MHz 双通道流式 LA · 双击本文件即可使用 · CDC#1=LA / CDC#2=PWM</div>
+  </div>
+  <div class="pills">
+    <span id="pwmStatus" class="pill">PWM 未连接</span>
+    <span id="laStatus" class="pill">LA 未连接</span>
+  </div>
+</header>
+
+<main>
+  <div id="warn" class="warn">当前浏览器不支持 WebSerial，请用 Chrome 或 Edge 打开本页（http://localhost）。</div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="pwm">PWM 信号源</button>
+    <button class="tab" data-tab="la">LA 流式示波器</button>
+    <button class="tab" data-tab="pins">引脚 / 接线</button>
+  </div>
+
+  <!-- ================= PWM ================= -->
+  <section id="tab-pwm" class="tab-panel active">
+    <div class="card toolbar">
+      <button id="btnPwmConnect">连接 PWM（CDC#2）</button>
+      <button id="btnPwmRead" class="ghost" disabled>读取状态</button>
+      <button id="btnPwmSave" class="ghost" disabled>保存设置</button>
+      <span class="hint">命令：f&lt;ch&gt;:&lt;Hz&gt; / d&lt;ch&gt;:&lt;%&gt; / on|off&lt;ch&gt; / i / save</span>
+    </div>
+
+    <div id="pwmGrid" class="pwm-grid"></div>
+
+    <div class="card note">
+      <b>接线</b>：CH0 = GPIO6（Pico 第 9 脚），CH1 = GPIO7（第 10 脚）。<br>
+      <b>范围</b>：频率 1 Hz – 20 MHz（上限 = clk_sys/6），占空比 0–100%（0.1 步进）。<br>
+      <b>掉电保存</b>：修改后约 1.5 秒自动落盘；也可点“保存设置”立即写入。
+    </div>
+  </section>
+
+  <!-- ================= LA ================= -->
+  <section id="tab-la" class="tab-panel">
+    <div class="card toolbar">
+      <button id="btnLaConnect">连接 LA（CDC#1）</button>
+      <button id="btnLaStart" disabled>开始</button>
+      <button id="btnLaStop" class="danger" disabled>停止</button>
+      <label>采样
+        <select id="sampleRate">
+          <option value="250000">250 kHz</option>
+          <option value="500000">500 kHz</option>
+          <option value="1000000" selected>1 MHz</option>
+          <option value="2000000">2 MHz</option>
+        </select>
+      </label>
+      <label>窗口
+        <select id="win">
+          <option value="1">1 ms</option>
+          <option value="4" selected>4 ms</option>
+          <option value="10">10 ms</option>
+          <option value="50">50 ms</option>
+          <option value="100">100 ms</option>
+          <option value="200">200 ms</option>
+          <option value="500">500 ms</option>
+          <option value="1000">1 s</option>
+          <option value="2000">2 s</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="show0" checked> CH0</label>
+      <label><input type="checkbox" id="show1" checked> CH1</label>
+      <label><input type="checkbox" id="glitchOn" checked> 去毛刺</label>
+      <select id="glitchUs">
+        <option value="2">2 µs</option>
+        <option value="5" selected>5 µs</option>
+        <option value="10">10 µs</option>
+        <option value="20">20 µs</option>
+      </select>
+      <label>导出
+        <select id="exportRange">
+          <option value="window">当前窗口</option>
+          <option value="buffer" selected>全部缓冲</option>
+        </select>
+      </label>
+      <button id="btnVcd" class="ghost">导出 VCD</button>
+      <button id="btnCsv" class="ghost">导出 CSV</button>
+    </div>
+
+    <div class="stats">
+      <div class="card stat"><div class="k">采样率</div><div class="v"><span id="sRate">0.00</span><span class="u">MSa/s</span></div></div>
+      <div class="card stat"><div class="k">吞吐</div><div class="v"><span id="sBps">0</span><span class="u">KB/s</span></div></div>
+      <div class="card stat"><div class="k">总采样</div><div class="v"><span id="sTotal">0</span></div></div>
+      <div class="card stat"><div class="k">缓冲</div><div class="v"><span id="sBuf">0</span><span class="u">s</span></div></div>
+    </div>
+
+    <div class="measure">
+      <div class="card m">
+        <div class="k">采集时间</div>
+        <div class="v" id="mWall">--:--:--.--- → --:--:--.---</div>
+        <div class="s" id="mElapsed">总采集 0.000 s</div>
+      </div>
+      <div class="card m">
+        <div class="k">窗口时间</div>
+        <div class="v" id="mWindow">+0.000 s → +0.000 s</div>
+        <div class="s" id="mWindowLen">窗口 0.000 ms</div>
+      </div>
+      <div class="card m">
+        <div class="k">采样间隔</div>
+        <div class="v" id="mInterval">0.500 µs</div>
+        <div class="s" id="mRate">2 MHz</div>
+      </div>
+      <div class="card m">
+        <div class="k">CH0 频率 / 占空比</div>
+        <div class="v" id="mCh0">--</div>
+      </div>
+      <div class="card m">
+        <div class="k">CH1 频率 / 占空比</div>
+        <div class="v" id="mCh1">--</div>
+      </div>
+    </div>
+
+    <div class="card longrun">
+      <div class="lr-head">
+        <label><input type="checkbox" id="longRunOn" checked> 无限时长统计（只保留统计，不保留原始采样）</label>
+        <label>目标频率 CH0 <input id="targetHz0" type="number" min="0.001" step="any" value="1000"> Hz</label>
+        <label>CH1 <input id="targetHz1" type="number" min="0.001" step="any" value="1000"> Hz</label>
+        <label>目标时长 <input id="targetH" type="number" min="0" step="0.5" value="8"> h</label>
+        <button id="btnStatReset" class="ghost">重置统计</button>
+        <button id="btnStatCsv" class="ghost">导出统计 CSV</button>
+        <span class="lr-time" id="lrTime">运行 0.000 s</span>
+      </div>
+      <table class="lr-table">
+        <thead><tr><th>项目</th><th>CH0</th><th>CH1</th></tr></thead>
+        <tbody>
+          <tr><td>边沿数</td><td id="lrEdges0">--</td><td id="lrEdges1">--</td></tr>
+          <tr><td>平均频率</td><td id="lrFreq0">--</td><td id="lrFreq1">--</td></tr>
+          <tr><td>平均周期</td><td id="lrMean0">--</td><td id="lrMean1">--</td></tr>
+          <tr><td>最近周期</td><td id="lrLast0">--</td><td id="lrLast1">--</td></tr>
+          <tr><td>最小 / 最大</td><td id="lrMinMax0">--</td><td id="lrMinMax1">--</td></tr>
+          <tr><td>抖动 σ</td><td id="lrJit0">--</td><td id="lrJit1">--</td></tr>
+          <tr><td>占空比</td><td id="lrDuty0">--</td><td id="lrDuty1">--</td></tr>
+          <tr><td>误差 ppm</td><td id="lrPpm0">--</td><td id="lrPpm1">--</td></tr>
+          <tr><td>中断/丢样</td><td id="lrGap0">--</td><td id="lrGap1">--</td></tr>
+        </tbody>
+      </table>
+      <div class="s" style="margin-top:8px;color:var(--muted);font-size:12px">
+        只累计统计量；原始采样仍只保留最后一小段用于显示/导出。8 小时长跑建议 <b>250 kHz</b>（62.5 KB/s，环余量 524 ms，8 h 约 1.8 GB 流量）。
+        统计 CSV 前 1 小时每秒一行、之后每 5 秒一行（8 h 约 8600 行，不丢开头）。
+        统计与显示共用同一去毛刺阈值（<span id="lrFilter">--</span>），未勾选「去毛刺」时统计也用原始采样。
+        误差 ppm =（实测平均频率 − 目标频率）/ 目标频率；1 kHz 目标填 <code>1000</code>，50 Hz 填 <code>50</code>。
+        边沿间隔超历史均值 ±50% 记为「中断/丢样」，不计入周期统计。
+      </div>
+    </div>
+
+    <section class="card scope">
+      <div class="legend">
+        <span><i class="dot" style="background:var(--ch0)"></i>CH0 · GPIO8</span>
+        <span><i class="dot" style="background:var(--ch1)"></i>CH1 · GPIO9</span>
+        <span style="margin-left:auto">时间轴：<span id="tspan">0 – 4 ms</span></span>
+      </div>
+      <canvas id="cv"></canvas>
+    </section>
+
+    <div class="card note">
+      <b>使用</b>：烧流式固件 <code>combo_1112_1016_led3.uf2</code> → 连接 CDC#1 → 开始。每字节 4 采样，
+      bit0=CH0、bit1=CH1。<br>
+      <b>采样率</b>：2 MHz 边沿分辨率更高，但 32 KB 环只有约 65 ms 反压余量；1 MHz 约 131 ms。
+      实测 USB 吞吐 1 MHz 已占满链路（约 99.9%）、2 MHz 只跑到 91%，超过就是环被覆盖、数据错乱；
+      <b>长跑请用 500 kHz 及以下</b>（环余量 262 ms，链路占用约 50%）。<br>
+      <b>测量</b>：频率基于当前窗口的首尾上升沿；窗口内不足 2 个上升沿时显示 <code>--</code>，请加大窗口
+      （1 ms ~ 2 s，共 9 档）。<b>低频（≤10 Hz）</b>要选 200 ms 以上窗口，且采样率降到 250 kHz 以下：
+      窗口最长受环形缓冲限制，1 MHz 只有约 1.05 s，250 kHz 约 4.2 s。<br>
+      <b>去毛刺</b>：勾选后把短于阈值的窄脉冲并入前一个电平，用于抑制 220 Ω/长线振铃；
+      关闭可看原始波形；导出 VCD/CSV 也会应用当前过滤。<br>
+      <b>导出</b>：VCD 可直接用 PulseView 打开（Open → 选 .vcd，时间基准 1 ns，CH0/CH1）；
+      CSV 适合脚本处理。导出范围可选“当前窗口”或“全部缓冲”（1 MHz 约 1.05 s，2 MHz 约 0.52 s）。<br>
+      <b>注意</b>：PulseView 有限采样固件（1 字节/采样）与本页不兼容。<br>
+      <b>长跑</b>：页面前台运行才能保证不丢样（切后台/最小化浏览器会被节流，32 KB 环在 1 MHz 约 131 ms、250 kHz 约 524 ms 就见底）；
+      跑 8 小时还要关掉系统睡眠/屏幕保护，并保持本标签页在前台。一旦出现丢样，「中断/丢样」会增长，可据此判断该段数据是否可信。
+      一旦出现丢样，「中断/丢样」会增长，此时该段统计不参与均值。
+    </div>
+  </section>
+
+  <!-- ================= 引脚 / 接线 ================= -->
+  <section id="tab-pins" class="tab-panel">
+    <div class="card note" style="margin-bottom:12px">
+      <b>双击即用</b>：直接双击 <code>combo_webserial.html</code>，用 <b>Edge</b> 或 <b>Chrome</b> 打开即可，
+      不需要本地服务、不联网（Firefox / Safari 不支持 WebSerial；若默认浏览器不是 Edge/Chrome，改双击同目录的 <code>start_console.bat</code>）。<br>
+      <b>选串口</b>：设备枚举出 <b>3 个</b> 串口，连 PWM 选<b>第 3 个</b>、连 LA 选<b>第 2 个</b>。
+      COM 号由系统分配，每台机器不同，按顺序认不要按号码认。
+    </div>
+
+    <div class="card" style="padding:14px 16px 6px">
+      <table class="pin-table">
+        <thead><tr><th style="width:120px">功能</th><th>信号</th><th>GPIO</th><th>Pico 针号</th><th>方向</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr class="grp"><td colspan="6">SWD 调试（CMSIS-DAP v2，接目标 MCU）</td></tr>
+          <tr><td>SWD</td><td>SWCLK</td><td class="gpio">GP2</td><td class="num">4</td><td class="dir-out">输出</td><td>接目标 SWCLK</td></tr>
+          <tr><td>SWD</td><td>SWDIO</td><td class="gpio">GP3</td><td class="num">5</td><td class="dir-both">双向</td><td>接目标 SWDIO</td></tr>
+
+          <tr class="grp"><td colspan="6">串口桥（CDC#0 ↔ uart1，115200 8N1）</td></tr>
+          <tr><td>UART</td><td>TX</td><td class="gpio">GP4</td><td class="num">6</td><td class="dir-out">输出</td><td>接目标 RX</td></tr>
+          <tr><td>UART</td><td>RX</td><td class="gpio">GP5</td><td class="num">7</td><td class="dir-in">输入</td><td>接目标 TX</td></tr>
+
+          <tr class="grp"><td colspan="6">逻辑分析仪输入（CDC#1）</td></tr>
+          <tr><td>LA</td><td>CH0</td><td class="gpio">GP8</td><td class="num">11</td><td class="dir-in">输入</td><td>3.3 V 电平，内部下拉</td></tr>
+          <tr><td>LA</td><td>CH1</td><td class="gpio">GP9</td><td class="num">12</td><td class="dir-in">输入</td><td>3.3 V 电平，内部下拉</td></tr>
+
+          <tr class="grp"><td colspan="6">PWM 信号源输出（CDC#2）</td></tr>
+          <tr><td>PWM</td><td>CH0</td><td class="gpio">GP6</td><td class="num">9</td><td class="dir-out">输出</td><td>1 Hz – 20 MHz，3.3 V</td></tr>
+          <tr><td>PWM</td><td>CH1</td><td class="gpio">GP7</td><td class="num">10</td><td class="dir-out">输出</td><td>1 Hz – 20 MHz，3.3 V</td></tr>
+
+          <tr class="grp"><td colspan="6">指示灯（板载，不在排针上）</td></tr>
+          <tr><td>LED</td><td>STATUS</td><td class="gpio">GP25</td><td class="num">—</td><td class="dir-out">输出</td><td>空闲常亮 / 采集呼吸 / 异常快闪</td></tr>
+
+          <tr class="grp"><td colspan="6">地线</td></tr>
+          <tr><td>GND</td><td>GND</td><td class="gpio">—</td><td class="num wide">3 / 8 / 13 / 18 / 23 / 28 / 33 / 38</td><td>—</td><td>接目标板地，<b>必须共地</b></td></tr>
+        </tbody>
+      </table>
+      <div class="pin-note">
+        针号按 Pico 40 pin 排针从 USB 端开始的物理编号（GP2 = 第 4 脚、GP6 = 第 9 脚）。
+        本固件不输出 nRESET（GP1 已释放作他用）。
+      </div>
+    </div>
+
+    <div class="card" style="padding:14px 16px 6px;margin-top:12px">
+      <table class="pin-table">
+        <thead><tr><th style="width:120px">USB 接口</th><th>用途</th><th>系统里看到的</th></tr></thead>
+        <tbody>
+          <tr><td>IF0 (vendor)</td><td>CMSIS-DAP v2 调试器</td><td>pyOCD / OpenOCD / Keil 自动识别，不占串口</td></tr>
+          <tr><td>CDC#0</td><td>目标板串口桥（GP4/GP5）</td><td>第 1 个串口</td></tr>
+          <tr><td>CDC#1</td><td>LA 流式数据</td><td>第 2 个串口（本页"连接 LA"选它）</td></tr>
+          <tr><td>CDC#2</td><td>PWM 文本命令</td><td>第 3 个串口（本页"连接 PWM"选它）</td></tr>
+        </tbody>
+      </table>
+      <div class="pin-note">
+        <b>电平</b>：所有信号 3.3 V，LA 输入不耐 5 V，接 5 V 系统请先分压。<br>
+        <b>长线</b>：杜邦线超过 20 cm 建议在源端串 220 Ω 抑制过冲（现有接法已串）。<br>
+        <b>悬空</b>：LA 输入内部下拉，未接线时读到低电平，不会乱跳。
+      </div>
+    </div>
+  </section>
+
+  <section class="card log"><pre id="log">就绪。PWM 选 CDC#2，LA 选 CDC#1。</pre></section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
