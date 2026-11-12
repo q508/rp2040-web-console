@@ -1,0 +1,28 @@
+/*
+ * Logic Analyzer RP2040-SUMP
+ * Copyright (C) 2023 Daniel Gorbea <danielgorbea@hotmail.com>
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+; 流式采样（2026-09-21 重写）：2 通道，无触发/无预触发/无 RLE。
+; 每个 wrap 周期 `in pins, 2` 读 2 位（2 通道），配合 sm_config_set_in_shift(..., 8)
+; 每 4 个采样（8 bit）自动 push 1 字节。字节内布局：采样 N 在 bit[2N : 2N+1]，
+; bit0 = pin_base+0（CH0），bit1 = pin_base+1（CH1），LSB 先。
+; 采样率由 clkdiv 决定（capture.c 里 clk_sys/rate）。
+
+.program capture
+.wrap_target
+    in pins, 2
+.wrap

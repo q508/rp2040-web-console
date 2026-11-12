@@ -52,6 +52,12 @@ WebSerial 是「安全上下文」API，浏览器只在这些情况开放 `navig
 3. COM 号每台机器不同，**按顺序认，别按号码认**
 4. 引脚定义、接线注意、USB 接口对照见页面第三个标签「引脚 / 接线」
 
+## 固件与源码
+
+- **烧录固件**：页面第三个标签「引脚 / 接线」顶部有下载按钮，文件在 `firmware/` 目录。
+- **固件源码**：完整工程在 `firmware-src/`，含 Pico SDK 2.x 的 CMake 工程、FreeRTOS-Kernel、CMSIS-DAP 与全部驱动，
+  编译方法见 `firmware-src/README.md`。
+
 ## 更新页面
 
 `index.html` / `style.css` / `app.js` 都是从单文件版 `combo_webserial.html` 生成的。
