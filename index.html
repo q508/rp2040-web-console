@@ -189,6 +189,21 @@
 
   <!-- ================= 引脚 / 接线 ================= -->
   <section id="tab-pins" class="tab-panel">
+    <div class="card fw-card">
+      <div class="fw-head">
+        <div>
+          <div class="fw-title">固件下载</div>
+          <div class="fw-meta">combo_1112_1016_led3.uf2 · 188 KB · 2026-11-12 · 三态 LED（空闲常亮 / 采集呼吸 / 异常快闪）</div>
+        </div>
+        <a class="fw-btn" href="firmware/combo_1112_1016_led3.uf2" download>下载 .uf2</a>
+      </div>
+      <ol class="fw-steps">
+        <li>按住板上 <b>BOOTSEL</b> 再插 USB，电脑出现 <code>RPI-RP2</code> 盘后松开</li>
+        <li>把下载的 <code>.uf2</code> 拖进该盘，板子自动重启</li>
+        <li>拔插一次 USB 让三个串口重新枚举，然后在 LA 页重新点“连接”</li>
+      </ol>
+      <div class="fw-hash">SHA-256&nbsp; 8b1d5b63…738b94 · 烧录会中断正在跑的采集，请先导出统计 CSV</div>
+    </div>
     <div class="card note" style="margin-bottom:12px">
       <b>双击即用</b>：直接双击 <code>combo_webserial.html</code>，用 <b>Edge</b> 或 <b>Chrome</b> 打开即可，
       不需要本地服务、不联网（Firefox / Safari 不支持 WebSerial；若默认浏览器不是 Edge/Chrome，改双击同目录的 <code>start_console.bat</code>）。<br>
