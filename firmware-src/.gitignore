@@ -1,0 +1,9 @@
+# 编译产物
+build/
+generated/
+*.uf2
+*.elf
+*.bin
+*.hex
+*.o
+*.map

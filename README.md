@@ -58,6 +58,26 @@ WebSerial 是「安全上下文」API，浏览器只在这些情况开放 `navig
 - **固件源码**：完整工程在 `firmware-src/`，含 Pico SDK 2.x 的 CMake 工程、FreeRTOS-Kernel、CMSIS-DAP 与全部驱动，
   编译方法见 `firmware-src/README.md`。
 
+## 许可
+
+本仓库代码 MIT，见 `LICENSE`。`firmware-src/` 里的 CMSIS-DAP（Apache-2.0）、FreeRTOS（MIT）
+以及上游 debugprobe 基座沿用各自许可，详见 `firmware-src/README.md`。
+
+## 发版流程
+
+1. 更新 `firmware-src/VERSION`（如 `v1.1`）；
+2. 重新编译固件，替换 `firmware/` 下的 `.uf2`；
+3. 同步页面上三处：下载按钮 `href`、`.fw-meta`、`.fw-hash` 的 SHA-256；
+4. `python build_web.py`；
+5. 提交、打 tag、推送。
+
+本地开发机上有 `release.sh` 把 1–5 串成一条命令：
+
+```bash
+./release.sh v1.1 "修复 xxx"     # 编译 + 归档 + 改页面 + 生成 + 提交 + tag + 推送
+DRY_RUN=1 ./release.sh v1.1      # 只做前半段，不提交不推送
+```
+
 ## 更新页面
 
 `index.html` / `style.css` / `app.js` 都是从单文件版 `combo_webserial.html` 生成的。

@@ -43,6 +43,23 @@ cmake --build build -j 8
 
 > `get-version.sh` 用 `git describe` 取版本号；本仓库没有打 tag 时会退化成 commit 短哈希，不影响编译。
 
+## 版本号
+
+固件版本号有两个来源，优先级从高到低：
+
+1. `git describe --exact-match --tags`——本仓库打了 tag 时用它；
+2. 源码树里的 `VERSION` 文件——解压包、非 git 目录里用它。
+
+`get-version.sh` 把结果写进 `generated/probe/version.h`，再由 `probe_config.c` 的
+`bi_program_version_string()` 嵌进二进制的 binary-info 块，所以烧进去之后可以用
+
+```bash
+picotool info firmware.uf2      # 直接看文件
+picotool info -d                # 看板子上的
+```
+
+读出 `version: v1.0`。
+
 ## 目录
 
 ```
