@@ -196,12 +196,15 @@
           <div class="fw-title">固件下载</div>
           <div class="fw-meta">combo_v1.0_1112_led3.uf2 · 188 KB · 2026-11-12 · 内嵌版本号 v1.0 · 三态 LED（空闲常亮 / 采集呼吸 / 异常快闪）</div>
         </div>
-        <a class="fw-btn" href="firmware/combo_v1.0_1112_led3.uf2" download>下载 .uf2</a>
+        <div class="fw-actions">
+          <button id="btnBootsel" class="fw-btn alt" type="button">进入升级模式</button>
+          <a class="fw-btn" href="firmware/combo_v1.0_1112_led3.uf2" download>下载 .uf2</a>
+        </div>
       </div>
       <ol class="fw-steps">
-        <li>按住板上 <b>BOOTSEL</b> 再插 USB，电脑出现 <code>RPI-RP2</code> 盘后松开</li>
-        <li>把下载的 <code>.uf2</code> 拖进该盘，板子自动重启</li>
-        <li>拔插一次 USB 让三个串口重新枚举，然后在 LA 页重新点“连接”</li>
+        <li>点右上「进入升级模式」（免按 BOOTSEL；也可按住 <b>BOOTSEL</b> 插 USB），等电脑出现 <code>RPI-RP2</code> 盘</li>
+        <li>双击同目录下的 <code>flash_uf2.bat</code> 自动投递，或手动把下载的 <code>.uf2</code> 拖进该盘</li>
+        <li>板子自动重启；三个串口没回来就拔插一次 USB，然后在 LA 页重新点“连接”</li>
       </ol>
       <div class="fw-hash">SHA-256&nbsp; b5f6bd57…8e26f83 · 烧录会中断正在跑的采集，请先导出统计 CSV</div>
       <div class="fw-src">源码：<a href="https://github.com/q508/rp2040-web-console/tree/main/firmware-src" target="_blank" rel="noopener">firmware-src</a> · 含 Pico SDK CMake 工程、FreeRTOS-Kernel、CMSIS-DAP 与全部驱动</div>

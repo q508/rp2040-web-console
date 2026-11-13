@@ -905,6 +905,39 @@ $('btnVcd').onclick = () => {
   }, 0);
 };
 
+/* ================= 进入 BOOTSEL 升级模式 ================= */
+const btnBootsel = $('btnBootsel');
+const BOOTSEL_LABEL = '进入升级模式';
+
+function bootselLabel(text, ms){
+  if (!btnBootsel) return;
+  btnBootsel.textContent = text;
+  if (ms){
+    btnBootsel.disabled = true;
+    setTimeout(() => { btnBootsel.textContent = BOOTSEL_LABEL; btnBootsel.disabled = false; }, ms);
+  }
+}
+
+if (btnBootsel) btnBootsel.onclick = async () => {
+  /* CDC#2(PWM) 是纯文本口，直接发命令；CDC#1(LA) 必须带 'm' 前缀才会被当文本处理 */
+  const viaPwm = !!pwmWriter;
+  const w = viaPwm ? pwmWriter : laWriter;
+  if (!w){
+    log('[BOOTSEL] 请先连接 LA 或 PWM 串口（任一个即可），否则发不出命令');
+    bootselLabel('未连接串口', 2000);
+    return;
+  }
+  try {
+    await w.write(new TextEncoder().encode(viaPwm ? 'bootsel\n' : 'mbootsel\n'));
+    log(`[BOOTSEL] 已通过 ${viaPwm ? 'PWM(CDC#2)' : 'LA(CDC#1)'} 发送升级命令，`
+        + '设备会重新枚举成 RPI-RP2 盘；之后运行 flash_uf2.bat 或手动拖 .uf2');
+    bootselLabel('已发送 ✓', 5000);
+  } catch (e){
+    log('[BOOTSEL] 发送失败：' + e.message);
+    bootselLabel('发送失败', 2000);
+  }
+};
+
 window.addEventListener('beforeunload', (e) => {
   try { if (laWriter && laRunning) laWriter.write(new Uint8Array([0x00])); } catch(e){}
   if (laRunning){
