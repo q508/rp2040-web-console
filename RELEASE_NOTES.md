@@ -1,16 +1,29 @@
-# RP2040 三合一 Web 控制台 v1.1
+# RP2040 三合一 Web 控制台 v1.2
 
 一根 USB 线，把 RP2040 变成 **DAPLink 调试器 + 双通道逻辑分析仪 + 双路 PWM 信号源**，上位机是浏览器，不用装客户端。
 
 网页版：https://q508.github.io/rp2040-web-console/
 
-## 本次更新（相对 v1.0）
+## 本次修复：网页「进入升级模式」真正可用了
 
-- **修复：网页「进入升级模式」会让设备卡死**。CDC#2 上还有未发完的数据时直接跳 ROM，ROM 接管失败，
-  表现为"回了话却不重启、该串口之后再也写不进去"。现在跳转前会清空 CDC 发送缓冲、主动断开 USB、
-  等枚举稳定、关闭 3 秒看门狗，并加了一层硬复位兜底——任何情况都不会把设备留在"没 USB 也没重启"的状态。
-- **固件版本号升到 v1.1**，可用 `picotool info` 读出。
-- `release.sh` 修复：改 `VERSION` 后 CMake 不会重编 `probe_config.c`，导致二进制里版本号仍是旧的，现在编译前强制 touch。
+v1.1 的按钮还有问题——点了之后设备要么卡死、要么复位回应用模式。v1.2 换成两段式实现，实测两个串口都能干净进入 BOOTSEL：
+
+| 入口 | 结果 |
+|---|---|
+| PWM `bootsel`（CDC#2） | **0.53 s** 串口消失 + RPI-RP2 出现 |
+| LA `mbootsel`（CDC#1） | **0.50 s** |
+| 盘写入 / 投递后恢复 | 可写，1 s 恢复三个串口 |
+
+### 三个叠在一起的根因
+
+1. **在 FreeRTOS 任务里直接调 `reset_usb_boot()` 会崩**。它在 RP2040 上走 `rom_reboot()`，内部要 `rom_func_lookup` 查 ROM 函数表并调用，要求环境干净。官方 `pico_bootsel_via_double_reset` 也是在 `main()` 之前的构造函数里调，而不是在任务里。
+2. **`watchdog_reboot()` 不会复位**。它靠看门狗超时，而 `housekeeping()` 在另一个任务里每 1 ms 调 `watchdog_update()` 喂狗，把超时刷掉了。
+3. **`tud_disconnect()` 是个坏主意**。主动断开让主机侧状态变脏，ROM 接管后枚举超时（实测 3.2 s）又退回去从 flash 启动。
+
+### 现在的做法
+
+- 命令侧只做两件事：写 3 个 magic 到 `__uninitialized_ram`（软复位不清 SRAM），然后写 AIRCR 的 `SYSRESETREQ` 立即复位；
+- `main()` 里 `board_init()` 之后、USB 初始化之前检查标记，命中才调 `reset_usb_boot(0, 0)`——和官方库同一个时机。
 
 ## 功能
 
@@ -24,12 +37,12 @@
 
 | 文件 | 说明 |
 |---|---|
-| `combo_v1.1_1113_led3.uf2` | 固件，189 KB，内嵌版本号 `v1.1` |
+| `combo_v1.2_1113_led3.uf2` | 固件，189 KB，内嵌版本号 `v1.2` |
 | `firmware-src/` | 完整源码（Pico SDK 2.x CMake 工程 + FreeRTOS-Kernel + CMSIS-DAP） |
 
-烧录：网页点「进入升级模式」（v1.1 起可用），或按住 BOOTSEL 插 USB；出现 `RPI-RP2` 盘后双击 `flash_uf2.bat` 或手动拖入。
+烧录：网页「引脚 / 接线」页点「进入升级模式」，出现 `RPI-RP2` 盘后双击 `flash_uf2.bat` 自动投递；也可按住 BOOTSEL 插 USB。
 
-SHA-256：`82acf11dad5c2b4374c42c95ffad0f4c152320914885b43e42b92446e0d580cb`
+SHA-256：见下方 Release 附件。
 
 ## 接线
 
