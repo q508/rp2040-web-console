@@ -197,12 +197,13 @@
           <div class="fw-meta">combo_v1.0_1112_led3.uf2 · 188 KB · 2026-11-12 · 内嵌版本号 v1.0 · 三态 LED（空闲常亮 / 采集呼吸 / 异常快闪）</div>
         </div>
         <div class="fw-actions">
-          <button id="btnBootsel" class="fw-btn alt" type="button">进入升级模式</button>
+          <button id="btnBootsel" class="fw-btn alt" type="button" disabled
+                  title="固件 v1.0 的软跳路径在 CDC#2 上会把设备卡死，等 v1.1 修复后开放；现在请按 BOOTSEL">升级模式（待固件修复）</button>
           <a class="fw-btn" href="firmware/combo_v1.0_1112_led3.uf2" download>下载 .uf2</a>
         </div>
       </div>
       <ol class="fw-steps">
-        <li>点右上「进入升级模式」（免按 BOOTSEL；也可按住 <b>BOOTSEL</b> 插 USB），等电脑出现 <code>RPI-RP2</code> 盘</li>
+        <li>按住 <b>BOOTSEL</b> 再插 USB，等电脑出现 <code>RPI-RP2</code> 盘后松开（网页「升级模式」按钮待固件 v1.1 修复后开放）</li>
         <li>双击同目录下的 <code>flash_uf2.bat</code> 自动投递，或手动把下载的 <code>.uf2</code> 拖进该盘</li>
         <li>板子自动重启；三个串口没回来就拔插一次 USB，然后在 LA 页重新点“连接”</li>
       </ol>
