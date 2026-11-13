@@ -17,6 +17,9 @@ function setPill(el, text, cls){
 }
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 
+/* 页面打开后自动连一次（用已授权的端口，不需要用户手势） */
+setTimeout(() => autoConnect('启动'), 700);
+
 if (!('serial' in navigator)) {
   $('warn').innerHTML = '当前浏览器不支持 WebSerial，请用 <b>Edge</b> 或 <b>Chrome</b> 打开本文件（Firefox / Safari 不支持）。';
   $('warn').style.display = 'block';
@@ -161,10 +164,8 @@ async function pwmReadLoop(){
   }
 }
 
-$('btnPwmConnect').onclick = async () => {
-  if (!('serial' in navigator)) return;
-  try {
-    pwmPort = await navigator.serial.requestPort();
+async function openPwm(port){
+    pwmPort = port;
     await pwmPort.open({ baudRate: 115200, bufferSize: 4096 });
     pwmWriter = pwmPort.writable.getWriter();
     pwmReader = pwmPort.readable.getReader();
@@ -184,6 +185,12 @@ $('btnPwmConnect').onclick = async () => {
       }
     }, 1200);
     log('[PWM] 已连接 ' + JSON.stringify(pwmPort.getInfo()));
+}
+
+$('btnPwmConnect').onclick = async () => {
+  if (!('serial' in navigator)) return;
+  try {
+    await openPwm(await navigator.serial.requestPort());
   } catch(e){
     log('[PWM] 连接失败：' + e.message);
     setPill($('pwmStatus'), 'PWM 连接失败', 'err');
@@ -507,16 +514,20 @@ async function laReadLoop(){
   }
 }
 
-$('btnLaConnect').onclick = async () => {
-  if (!('serial' in navigator)) return;
-  try {
-    laPort = await navigator.serial.requestPort();
+async function openLa(port){
+    laPort = port;
     await laPort.open({ baudRate: 115200, bufferSize: 65536 });
     laWriter = laPort.writable.getWriter();
     setPill($('laStatus'), 'LA 已连接', 'ok');
     $('btnLaConnect').disabled = true;
     $('btnLaStart').disabled = false;
     log('[LA] 已连接 ' + JSON.stringify(laPort.getInfo()));
+}
+
+$('btnLaConnect').onclick = async () => {
+  if (!('serial' in navigator)) return;
+  try {
+    await openLa(await navigator.serial.requestPort());
   } catch(e){
     log('[LA] 连接失败：' + e.message);
     setPill($('laStatus'), 'LA 连接失败', 'err');
@@ -570,9 +581,140 @@ $('btnLaStop').onclick = async () => {
   log('[LA] 停止采集（0x00）');
 };
 
+/* ================= 自动连接 / 掉线重连 ================= */
+/* getPorts() 拿不到接口号，只能靠发命令探出角色：
+ *   LA(CDC#1)  认 'mi' -> 回 "LA: ..."
+ *   PWM(CDC#2) 认 'i'  -> 回状态表 "Ch | GPIO | ..."
+ * 两个口对不认识的命令都是静默（PWM 返回 false、SUMP 的 0x69 不在命令表），所以探测无副作用。 */
+/* file:// 下 localStorage 可能抛 SecurityError，包一层免得整段脚本挂掉 */
+function lsGet(k, dflt){ try { const v = localStorage.getItem(k); return v === null ? dflt : v; } catch(e){ return dflt; } }
+function lsSet(k, v){ try { localStorage.setItem(k, v); } catch(e){} }
+let autoEnabled = lsGet('combo.autoConn', '1') !== '0';
+let reconnectTimer = null;
+/* 断开时记下哪些角色需要恢复，重连只针对它们（否则只连 LA 时会因为 PWM 永远为空而无限重试） */
+const wantRoles = { la: false, pwm: false };
+
+async function probePort(port){
+  try {
+    await port.open({ baudRate: 115200, bufferSize: 4096 });
+  } catch(e){
+    return null;
+  }
+  const dec = new TextDecoder();
+  let reader = null, writer = null, text = '';
+  try {
+    reader = port.readable.getReader();
+    writer = port.writable.getWriter();
+
+    /* 同一个 reader 里连发两条命令再统一收：一次 open 只能 getReader() 一次，
+     * 前面拆成两段读会把流 cancel 掉，第二段永远读不到。 */
+    /* 注意：超时后不能丢掉挂起的 reader.read()，否则下次再调 read() 会抛
+     * "read already pending"，第二条命令的响应就永远收不到。这里把 pending 存下来复用。 */
+    let pending = null;
+    const readFor = async (ms) => {
+      const deadline = Date.now() + ms;
+      let out = '';
+      while (Date.now() < deadline){
+        if (!pending) pending = reader.read();
+        const r = await Promise.race([
+          pending,
+          new Promise(res => setTimeout(() => res({ timeout: true }), Math.max(40, deadline - Date.now())))
+        ]);
+        if (r.timeout) break;
+        pending = null;
+        if (r.done) break;
+        if (r.value) out += dec.decode(r.value, { stream: true });
+      }
+      return out;
+    };
+
+    await writer.write(new TextEncoder().encode('mi\n'));
+    text += await readFor(420);
+
+    if (!text.includes('LA:')){
+      await writer.write(new TextEncoder().encode('i\n'));
+      text += await readFor(420);
+    }
+  } catch(e){
+  } finally {
+    try { if (writer) writer.releaseLock(); } catch(e){}
+    try { if (reader) await reader.cancel(); } catch(e){}
+    try { if (reader) reader.releaseLock(); } catch(e){}
+  }
+  await sleep(60);
+  try { await port.close(); } catch(e){}
+
+  if (text.includes('LA:')) return 'la';
+  if (text.includes('Ch |') || text.includes('Freq(Hz)')) return 'pwm';
+  return null;
+}
+
+async function autoConnect(tag){
+  if (!autoEnabled || !('serial' in navigator)) return;
+  if (laPort && pwmPort) return;
+  let ports = [];
+  try { ports = await navigator.serial.getPorts(); } catch(e){ return; }
+  if (!ports.length){
+    if (tag === '启动') log('[自动连接] 还没有授权过的串口，首次请手动点「连接」并选端口');
+    return;
+  }
+  log(`[${tag}] 发现 ${ports.length} 个已授权端口，正在识别角色…`);
+  for (const p of ports){
+    if (p === laPort || p === pwmPort) continue;
+    if (laPort && pwmPort) break;
+    const role = await probePort(p);
+    try {
+      if (role === 'la' && !laPort){ await openLa(p); log('[自动连接] → LA（CDC#1）'); }
+      else if (role === 'pwm' && !pwmPort){ await openPwm(p); log('[自动连接] → PWM（CDC#2）'); }
+      else if (!role) log('[自动连接] 有端口无响应，跳过');
+    } catch(e){
+      log('[自动连接] 连接失败：' + e.message);
+    }
+  }
+}
+
+function scheduleReconnect(){
+  if (!autoEnabled) return;
+  if (reconnectTimer) return;
+  if (!wantRoles.la && !wantRoles.pwm) return;
+  let tries = 0;
+  const tick = async () => {
+    reconnectTimer = null;
+    if (!autoEnabled) return;
+    const need = (wantRoles.la && !laPort) || (wantRoles.pwm && !pwmPort);
+    if (!need){
+      wantRoles.la = wantRoles.pwm = false;
+      log('[自动重连] 已恢复');
+      return;
+    }
+    tries++;
+    if (tries > 6){
+      wantRoles.la = wantRoles.pwm = false;
+      log('[自动重连] 连续 6 次失败，已停止（可手动点连接）');
+      return;
+    }
+    log(`[自动重连] 第 ${tries} 次尝试…`);
+    await autoConnect('重连');
+    if ((wantRoles.la && !laPort) || (wantRoles.pwm && !pwmPort)) reconnectTimer = setTimeout(tick, 1500);
+    else { wantRoles.la = wantRoles.pwm = false; log('[自动重连] 已恢复'); }
+  };
+  reconnectTimer = setTimeout(tick, 1200);   /* 先等设备重启枚举完 */
+}
+
+$('autoConn').checked = autoEnabled;
+$('autoConn').onchange = () => {
+  autoEnabled = $('autoConn').checked;
+  lsSet('combo.autoConn', autoEnabled ? '1' : '0');
+  log(`[自动连接] 已${autoEnabled ? '开启' : '关闭'}`);
+  if (!autoEnabled && reconnectTimer){ clearTimeout(reconnectTimer); reconnectTimer = null; }
+};
+
 navigator.serial?.addEventListener('disconnect', e => {
   if (pwmPort && e.target === pwmPort){
+    /* 必须置空，否则 autoConnect 里"已连接"判断会把重连挡掉 */
+    pwmPort = null; pwmWriter = null; pwmReader = null;
     pwmConnected = false;
+    wantRoles.pwm = true;
     setPill($('pwmStatus'), 'PWM 已断开', 'err');
     $('btnPwmConnect').disabled = false;
     $('btnPwmRead').disabled = true;
@@ -581,7 +723,9 @@ navigator.serial?.addEventListener('disconnect', e => {
     log('[PWM] 串口已断开');
   }
   if (laPort && e.target === laPort){
+    laPort = null; laWriter = null; laReader = null;
     laRunning = false;
+    wantRoles.la = true;
     setPill($('laStatus'), 'LA 已断开', 'err');
     $('btnLaConnect').disabled = false;
     $('btnLaStart').disabled = true;
@@ -589,6 +733,7 @@ navigator.serial?.addEventListener('disconnect', e => {
     rateSel.disabled = false;
     log('[LA] 串口已断开');
   }
+  scheduleReconnect();
 });
 
 function fmtClock(d){
